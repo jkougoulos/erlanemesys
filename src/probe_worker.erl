@@ -111,7 +111,7 @@ handle_call( get_status , _From,  State ) ->
 				touched = Sent, 
 				felt = Rcvd 
 			} = State,
-		{ok, NewResults } = touch_store:get_results( Host ),
+		{ok, NewResults } = probe_store:get_results( Host ),
 		{reply, { ok, Status, Sent, Rcvd, NewResults } , State};
 
 handle_call( { set_interval, NewInterval }, _From , State ) when NewInterval >= 100 ->

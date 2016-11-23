@@ -5,7 +5,8 @@
   {mod, { erlanemesys_app, []}},
   {applications,
    [kernel,
-    stdlib
+    stdlib,
+    gen_icmp
    ]},
   {env,[]},
   {modules, []},
