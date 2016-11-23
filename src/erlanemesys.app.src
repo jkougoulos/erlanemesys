@@ -1,5 +1,5 @@
 {application, erlanemesys,
- [{description, "An OTP application"},
+ [{description, "An OTP based availability checker"},
   {vsn, "0.1.0"},
   {registered, []},
   {mod, { erlanemesys_app, []}},
