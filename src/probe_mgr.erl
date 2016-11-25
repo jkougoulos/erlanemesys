@@ -7,28 +7,38 @@
 
 -behaviour(gen_server).
 
+%-record(pstate,
+%                {
+%		 status,
+%		 interval,
+%		 tries,
+%		 timeout
+%      }).
 -record(pstate,
                 {
 		 status,
 		 interval,
-		 tries,
-		 timeout
+		 type,
+		 attrs
       }).
 
 -define(SERVER, ?MODULE).
 
 -define(DEFINTERVAL, 30000 ).
--define(DEFTRIES, 1 ).
+-define(DEF_TRIES, 1 ).
 -define(DEF_TIMEOUT, 2000 ).
+-define(DEF_STATE_NEWPROBE, running ).
 
 register_host_pid( Host, Pid ) ->
 	gen_server:cast( ?MODULE, { register_host_pid, { Host, Pid } } ).
 
-add( Host ) ->
-	add( Host, running ).
+%add( Host ) ->
+%	add( Host, running ).
+add( Params ) ->
+	add( Params, ?DEF_STATE_NEWPROBE ).
 
-add( Host, Initial ) ->
-	gen_server:call( ?MODULE, { add, { Host, Initial } } ).
+add( Params, Initial ) ->
+	gen_server:call( ?MODULE, { add, { Params, Initial } } ).
 
 set_interval( Host, Interval ) ->
 	probe_worker:set_interval( Host, Interval ).
@@ -51,16 +61,24 @@ start_link() ->
 stop() ->
 	gen_server:call(?MODULE, stop).
 
-handle_call( { add , { Host, Initial } } , _From, State ) ->
+handle_call( { add , { Params, Initial } } , _From, State ) ->
+	{ name, ProbeName } = lists:keyfind( name, 1, Params ),
+	{ type, ProbeType } = lists:keyfind( type, 1, Params ),
+	{ attrs, Attrs } = lists:keyfind( attrs, 1, Params ),
+	{ fqdn_ip, Host } = lists:keyfind( fqdn_ip, 1, Attrs ), 
 	case probe_store:get_pstate( Host ) of 
 		[] ->
 			Interval = ?DEFINTERVAL,
-			Tries = ?DEFTRIES,
-			Timeout = ?DEF_TIMEOUT,
-			NewPstate = #pstate{ status = Initial, tries = Tries,
-					 interval = Interval, timeout = Timeout },
-			ok = probe_store:set_pstate( Host, NewPstate ),
-			Result = probe_worker:new( Host, Interval, Tries, Timeout );
+%			Tries = ?DEFTRIES,
+%			Timeout = ?DEF_TIMEOUT,
+			NewPstate = #pstate{ 
+						status = Initial, 
+						type = ProbeType, 
+					 	interval = Interval, 
+						attrs = Attrs 
+					   },
+			ok = probe_store:set_pstate( ProbeName, NewPstate ),
+			Result = probe_worker:new( Host, Interval, ?DEF_TRIES, ?DEF_TIMEOUT );
 		_ -> 
 			Result = nee_it_exist_in_config
 	end,
@@ -124,9 +142,11 @@ handle_info( start_up, _State ) ->
 	case probe_store:get_active() of
 		[] ->
 			Config = probe_store:get_config(),
-			[ probe_worker:new( Host, Interval, Tries, Timeout ) || 
-				{ Host, #pstate{ status = _Initial, interval = Interval,
-						 tries = Tries, timeout = Timeout }} <- Config ];
+			[ probe_worker:new( ProbeName, Interval, ?DEF_TRIES, ?DEF_TIMEOUT ) || 
+				{ ProbeName, #pstate{ status = _Initial, type = Type,
+						 interval = Interval, attrs = Attrs }} <- Config ];
+%				{ Host, #pstate{ status = _Initial, interval = Interval,
+%						 tries = Tries, timeout = Timeout }} <- Config ];
 		_ ->
 			we_restarted_good_luck
 	end,

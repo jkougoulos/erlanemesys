@@ -10,7 +10,16 @@
 -export([report/1]).
 
 add( Host ) ->
-	probe_mgr:add( Host ).
+	probe_mgr:add( [ 
+				{ name, Host }, 
+				{ type, ping }, 
+				{ attrs , [ 
+						{ fqdn_ip, Host }
+					  ]
+				}
+			]  
+			).
+%	probe_mgr:add( Host ).
 
 del( Host ) ->
 	probe_mgr:del( Host ).
