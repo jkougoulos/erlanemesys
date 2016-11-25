@@ -22,8 +22,8 @@ scheduler( Pid, State ) ->
 	random:seed( now() ),
 	Delay = random:uniform( Interval ),
 	timer:sleep( Delay ),
-	Pid ! poke_me,
-	{ ok, Tref } = timer:send_interval( Interval, Pid, poke_me ),
+	Pid ! poke,
+	{ ok, Tref } = timer:send_interval( Interval, Pid, poke ),
 	set_running( Pid, Tref ).
 
 set_running( Pid, Tref ) ->
@@ -198,7 +198,7 @@ handle_cast(Msg, State) ->
 		io:format( "Ignoring ~p~n", [Msg] ),
 		{noreply, State}.
 
-handle_info( poke_me, State ) ->
+handle_info( poke, State ) ->
 		touch( self() ),
 		{noreply, State };
 

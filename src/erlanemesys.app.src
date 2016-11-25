@@ -9,7 +9,9 @@
     sasl,
     procket,
     pkt,
-    gen_icmp
+    gen_icmp,
+    mochiweb,
+    erlanemesys_web
    ]},
   {env,[]},
   {modules, []},
