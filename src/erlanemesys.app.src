@@ -6,6 +6,9 @@
   {applications,
    [kernel,
     stdlib,
+    sasl,
+    procket,
+    pkt,
     gen_icmp
    ]},
   {env,[]},
