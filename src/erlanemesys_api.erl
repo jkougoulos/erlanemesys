@@ -9,9 +9,10 @@
 %probe_stats calls
 -export([report/1]).
 
-add( Host ) ->
+add( ProbeName ) ->
+	Host = ProbeName,
 	probe_mgr:add( [ 
-				{ name, Host }, 
+				{ name, ProbeName }, 
 				{ type, ping }, 
 				{ attrs , [ 
 						{ fqdn_ip, Host }
@@ -21,20 +22,20 @@ add( Host ) ->
 			).
 %	probe_mgr:add( Host ).
 
-del( Host ) ->
-	probe_mgr:del( Host ).
+del( ProbeName ) ->
+	probe_mgr:del( ProbeName ).
 
-run( Host ) ->
-	probe_mgr:run( Host ).
+run( ProbeName ) ->
+	probe_mgr:run( ProbeName ).
 
-sleep( Host ) ->
-	probe_mgr:sleep( Host ).
+sleep( ProbeName ) ->
+	probe_mgr:sleep( ProbeName ).
 
 get_active() ->
 	probe_mgr:get_active().
 
-set_interval(Host, Interval) ->
-	probe_mgr:set_interval(Host, Interval).
+set_interval(ProbeName, Interval) ->
+	probe_mgr:set_interval(ProbeName, Interval).
 
-report( Host ) ->
-	probe_stats:report( Host ).
+report( ProbeName ) ->
+	probe_stats:report( ProbeName ).

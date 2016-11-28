@@ -3,19 +3,34 @@
 -behavior( gen_server ).
 
 -export([start_link/1, touch/1, touch/2, testdie/1, get_status/1, run/1]).
--export([remove/1, sleep/1, set_interval/2, new/4, scheduler/2 ]).
+-export([remove/1, sleep/1, set_interval/2, new/2, scheduler/2 ]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -record(state, 
 		{
 		 host, 
-		 attempts = 0, tref, status, 
-		 interval, tries , timeout, 
-		 touched = 0, felt = 0
-		}).
+		 type, 
+		 attempts = 0, 
+	 	 tref, 
+		 status, 
+		 interval,  
+		 touched = 0, 
+		 felt = 0
+	}).
+
+-record(pstate,
+                {
+                 status,
+                 interval,
+                 type,
+                 attrs
+      }).
+
 
 -record(result, { timestamp, got } ).
+
+-define(DEF_TIMEOUT, 2000 ).
 
 scheduler( Pid, State ) ->
 	#state{ interval = Interval } = State,
@@ -38,13 +53,14 @@ remove( Dest ) ->
 			{ error, host_does_not_exist }
 	end.
 		
-new( Dest, Interval, Tries, Timeout ) ->
-	case probe_store:get_host_pid( Dest ) of
+%new( Dest, Interval, Tries, Timeout ) ->
+new( ProbeName, Pstate ) -> 
+	case probe_store:get_host_pid( ProbeName ) of
 		{ok, _Pid} ->
-			{ error, host_already_added };
+			{ error, probe_already_added };
 		_ ->
 			supervisor:start_child( probe_sup, 
-				[ { Dest, Interval, Tries, Timeout } ] )
+				[ { ProbeName, Pstate } ] )
 	end.
 
 get_status( Pid ) ->
@@ -64,8 +80,8 @@ run( Host ) ->
 sleep( Pid ) when is_pid( Pid ) ->
 	gen_server:call( Pid, sleep );
 
-sleep( Host ) ->
-	case probe_store:get_host_pid( Host ) of
+sleep( ProbeName ) ->
+	case probe_store:get_host_pid( ProbeName ) of
 		{ok, Pid} ->
 			sleep(Pid);
 		_ ->
@@ -80,8 +96,8 @@ set_interval( Pid, NewInterval ) when is_pid( Pid ) ->
 		end,
 	gen_server:call( Pid, { set_interval, NewInt } );
 	
-set_interval( Host, NewInterval ) ->
-	{ ok, Pid } = probe_store:get_host_pid( Host ),
+set_interval( ProbeName, NewInterval ) ->
+	{ ok, Pid } = probe_store:get_host_pid( ProbeName ),
 	set_interval( Pid, NewInterval ).
 
 touch( Pid ) ->
@@ -147,16 +163,14 @@ handle_cast( touch , State ) ->
 		#state{ 
 			host = Host, 
 			touched = Echo, 
-			felt = Replies,
-			tries = _Tries,
-			timeout = Timeout 
+			felt = Replies
 						} = State,
 
 		NewEcho = Echo + 1,
 		Seq = NewEcho rem 65536,
 		UTCNow = os:timestamp(),
 		PingRes = 
-  		  try gen_icmp:ping([Host], [{ timeout, Timeout},{ sequence, Seq } ]) of
+  		  try gen_icmp:ping([Host], [{ timeout, ?DEF_TIMEOUT},{ sequence, Seq } ]) of
 		    [PingOut] -> PingOut 
 		  catch
 			Exception:Reason -> 
@@ -211,15 +225,22 @@ start_link( Params ) ->
 terminate(_Reason, _State ) ->
 			ok.
 
-init( [ {Host, Interval, Tries, Timeout} ] ) -> 
+init( [ {ProbeName, Pstate} ] ) -> 
+        #pstate{
+                                                status = _Initial,
+                                                type = Type,
+                                                interval = Interval,
+                                                attrs = Attrs
+                                           } = Pstate,
+        { fqdn_ip, Host } = lists:keyfind( fqdn_ip, 1, Attrs ),
+
 			StartState = #state{ 
 						host = Host, 
+						type = Type,
 						interval = Interval, 
-						tries = Tries, 
-						timeout = Timeout, 
 						status = sleeping
 						},
-			probe_mgr:register_host_pid( Host, self() ),
+			probe_mgr:register_host_pid( ProbeName, self() ),
 			{ ok, StartState }.  
 
 code_change(_OldVsn, State, _Extra) ->

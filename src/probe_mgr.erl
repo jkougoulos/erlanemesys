@@ -40,17 +40,17 @@ add( Params ) ->
 add( Params, Initial ) ->
 	gen_server:call( ?MODULE, { add, { Params, Initial } } ).
 
-set_interval( Host, Interval ) ->
-	probe_worker:set_interval( Host, Interval ).
+set_interval( ProbeName, Interval ) ->
+	probe_worker:set_interval( ProbeName, Interval ).
 
-del( Host ) ->
-	gen_server:call( ?MODULE, { del, Host } ).
+del( ProbeName ) ->
+	gen_server:call( ?MODULE, { del, ProbeName } ).
 	
-run( Host ) ->
-	gen_server:call( ?MODULE, { run, Host } ).
+run( ProbeName ) ->
+	gen_server:call( ?MODULE, { run, ProbeName } ).
 	
-sleep( Host ) ->
-	gen_server:call( ?MODULE, { sleep, Host } ).
+sleep( ProbeName ) ->
+	gen_server:call( ?MODULE, { sleep, ProbeName } ).
 	
 get_active() ->
 	gen_server:call( ?MODULE, get_active ).
@@ -78,25 +78,26 @@ handle_call( { add , { Params, Initial } } , _From, State ) ->
 						attrs = Attrs 
 					   },
 			ok = probe_store:set_pstate( ProbeName, NewPstate ),
-			Result = probe_worker:new( Host, Interval, ?DEF_TRIES, ?DEF_TIMEOUT );
+			Result = probe_worker:new( ProbeName, NewPstate );
+%			Result = probe_worker:new( Host, Interval, ?DEF_TRIES, ?DEF_TIMEOUT );
 		_ -> 
 			Result = nee_it_exist_in_config
 	end,
-	io:format("Got ~p for new host ~p~n", [Result,Host]),
+	io:format("Got ~p for new probe ~p~n", [Result,ProbeName]),
 	{ reply, Result , State };
 
-handle_call( { del ,  Host } , _From, State ) ->
-	Result = probe_worker:remove( Host ),
-	ok = probe_store:del_pstate(Host),
+handle_call( { del ,  ProbeName } , _From, State ) ->
+	Result = probe_worker:remove( ProbeName ),
+	ok = probe_store:del_pstate( ProbeName ),
 	{ reply, Result , State };
 
 
-handle_call( { run ,  Host } , _From, State ) ->
-	case probe_worker:run( Host ) of
+handle_call( { run ,  ProbeName } , _From, State ) ->
+	case probe_worker:run( ProbeName ) of
 		ok ->
-			[{Host,HostPstate}] = probe_store:get_pstate( Host ),
+			[{ProbeName,HostPstate}] = probe_store:get_pstate( ProbeName ),
 			NewPstate = HostPstate#pstate{ status = running },
-			ok = probe_store:set_pstate( Host, NewPstate ),
+			ok = probe_store:set_pstate( ProbeName, NewPstate ),
 			Result = ok;
 		_ ->
 			Result = nee_is_running_or_not_exist
@@ -142,9 +143,15 @@ handle_info( start_up, _State ) ->
 	case probe_store:get_active() of
 		[] ->
 			Config = probe_store:get_config(),
-			[ probe_worker:new( ProbeName, Interval, ?DEF_TRIES, ?DEF_TIMEOUT ) || 
-				{ ProbeName, #pstate{ status = _Initial, type = Type,
-						 interval = Interval, attrs = Attrs }} <- Config ];
+			[ probe_worker:new( ProbeName, Pstate ) ||
+				{ ProbeName, Pstate } <- Config ]; 
+%			[ probe_worker:new( ProbeName, Interval, ?DEF_TRIES, ?DEF_TIMEOUT ) ||
+%				{ ProbeName, #pstate{ 
+%							status = _Initial, 
+%							type = Type,
+%						 	interval = Interval, 
+%							attrs = Attrs 
+%						     }} <- Config ];
 %				{ Host, #pstate{ status = _Initial, interval = Interval,
 %						 tries = Tries, timeout = Timeout }} <- Config ];
 		_ ->
