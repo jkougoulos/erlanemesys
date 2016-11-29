@@ -1,7 +1,7 @@
 -module(probe_mgr).
 
 -export([start_link/0, stop/0, add/1, add/2, get_active/0, run/1, sleep/1 ]).
--export([del/1, register_host_pid/2, set_interval/2]).
+-export([del/1, register_probe_pid/2, set_interval/2]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, code_change/3, terminate/2]).
 
@@ -25,15 +25,11 @@
 -define(SERVER, ?MODULE).
 
 -define(DEFINTERVAL, 30000 ).
--define(DEF_TRIES, 1 ).
--define(DEF_TIMEOUT, 2000 ).
 -define(DEF_STATE_NEWPROBE, running ).
 
-register_host_pid( Host, Pid ) ->
-	gen_server:cast( ?MODULE, { register_host_pid, { Host, Pid } } ).
+register_probe_pid( ProbeName, Pid ) ->
+	gen_server:cast( ?MODULE, { register_probe_pid, { ProbeName, Pid } } ).
 
-%add( Host ) ->
-%	add( Host, running ).
 add( Params ) ->
 	add( Params, ?DEF_STATE_NEWPROBE ).
 
@@ -65,12 +61,9 @@ handle_call( { add , { Params, Initial } } , _From, State ) ->
 	{ name, ProbeName } = lists:keyfind( name, 1, Params ),
 	{ type, ProbeType } = lists:keyfind( type, 1, Params ),
 	{ attrs, Attrs } = lists:keyfind( attrs, 1, Params ),
-	{ fqdn_ip, Host } = lists:keyfind( fqdn_ip, 1, Attrs ), 
-	case probe_store:get_pstate( Host ) of 
+	case probe_store:get_pstate( ProbeName ) of 
 		[] ->
 			Interval = ?DEFINTERVAL,
-%			Tries = ?DEFTRIES,
-%			Timeout = ?DEF_TIMEOUT,
 			NewPstate = #pstate{ 
 						status = Initial, 
 						type = ProbeType, 
@@ -79,7 +72,6 @@ handle_call( { add , { Params, Initial } } , _From, State ) ->
 					   },
 			ok = probe_store:set_pstate( ProbeName, NewPstate ),
 			Result = probe_worker:new( ProbeName, NewPstate );
-%			Result = probe_worker:new( Host, Interval, ?DEF_TRIES, ?DEF_TIMEOUT );
 		_ -> 
 			Result = nee_it_exist_in_config
 	end,
@@ -95,8 +87,8 @@ handle_call( { del ,  ProbeName } , _From, State ) ->
 handle_call( { run ,  ProbeName } , _From, State ) ->
 	case probe_worker:run( ProbeName ) of
 		ok ->
-			[{ProbeName,HostPstate}] = probe_store:get_pstate( ProbeName ),
-			NewPstate = HostPstate#pstate{ status = running },
+			[{ProbeName,ProbePstate}] = probe_store:get_pstate( ProbeName ),
+			NewPstate = ProbePstate#pstate{ status = running },
 			ok = probe_store:set_pstate( ProbeName, NewPstate ),
 			Result = ok;
 		_ ->
@@ -104,12 +96,12 @@ handle_call( { run ,  ProbeName } , _From, State ) ->
 	end,
 	{ reply, Result , State };
 
-handle_call( { sleep ,  Host } , _From, State ) ->
-	case probe_worker:sleep( Host ) of
+handle_call( { sleep ,  ProbeName } , _From, State ) ->
+	case probe_worker:sleep( ProbeName ) of
 		ok ->
-			[{Host,HostPstate}] = probe_store:get_pstate( Host ),
-			NewPstate = HostPstate#pstate{ status = sleeping },
-			ok = probe_store:set_pstate( Host, NewPstate ),
+			[{ProbeName,ProbePstate}] = probe_store:get_pstate( ProbeName ),
+			NewPstate = ProbePstate#pstate{ status = sleeping },
+			ok = probe_store:set_pstate( ProbeName, NewPstate ),
 			Result = ok;
 		_ ->
 			Result = nee_is_sleeping_or_not_exist
@@ -124,13 +116,13 @@ handle_call( _Msg, _From, State) ->
 	{reply, { no_call_match_dear }, State }.
 
 
-handle_cast( { register_host_pid , { Host, Pid }}, State ) ->
-	[{Host, Pstate}] = probe_store:get_pstate( Host ),
-	ok = probe_store:add_host_pid( Host, Pid ),
+handle_cast( { register_probe_pid , { ProbeName, Pid }}, State ) ->
+	[{ProbeName, Pstate}] = probe_store:get_pstate( ProbeName ),
+	ok = probe_store:add_probe_pid( ProbeName, Pid ),
 	#pstate{ status = WantStatus } = Pstate,
 	case WantStatus of
 		running ->
-			ok = probe_worker:run( Host );
+			ok = probe_worker:run( ProbeName );
 		_ ->
 			ok
 	end,
@@ -143,17 +135,7 @@ handle_info( start_up, _State ) ->
 	case probe_store:get_active() of
 		[] ->
 			Config = probe_store:get_config(),
-			[ probe_worker:new( ProbeName, Pstate ) ||
-				{ ProbeName, Pstate } <- Config ]; 
-%			[ probe_worker:new( ProbeName, Interval, ?DEF_TRIES, ?DEF_TIMEOUT ) ||
-%				{ ProbeName, #pstate{ 
-%							status = _Initial, 
-%							type = Type,
-%						 	interval = Interval, 
-%							attrs = Attrs 
-%						     }} <- Config ];
-%				{ Host, #pstate{ status = _Initial, interval = Interval,
-%						 tries = Tries, timeout = Timeout }} <- Config ];
+			[ probe_worker:new( ProbeName, Pstate ) || { ProbeName, Pstate } <- Config ]; 
 		_ ->
 			we_restarted_good_luck
 	end,

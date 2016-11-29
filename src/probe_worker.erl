@@ -9,14 +9,13 @@
 
 -record(state, 
 		{
-		 host, 
+		 name,
 		 type, 
 		 attempts = 0, 
 	 	 tref, 
 		 status, 
 		 interval,  
-		 touched = 0, 
-		 felt = 0
+		 attrs
 	}).
 
 -record(pstate,
@@ -27,10 +26,6 @@
                  attrs
       }).
 
-
--record(result, { timestamp, got } ).
-
--define(DEF_TIMEOUT, 2000 ).
 
 scheduler( Pid, State ) ->
 	#state{ interval = Interval } = State,
@@ -44,18 +39,17 @@ scheduler( Pid, State ) ->
 set_running( Pid, Tref ) ->
 	gen_server:cast( Pid, { set_running , Tref } ).
 
-remove( Dest ) ->
-	case probe_store:get_host_pid( Dest ) of
+remove( ProbeName ) ->
+	case probe_store:get_probe_pid( ProbeName ) of
 		{ok, Pid } ->
 			ok = supervisor:terminate_child( probe_sup, Pid ),
-			probe_store:del_host_pid( Dest );
+			probe_store:del_probe_pid( ProbeName );
 		_ ->
-			{ error, host_does_not_exist }
+			{ error, probe_does_not_exist }
 	end.
 		
-%new( Dest, Interval, Tries, Timeout ) ->
 new( ProbeName, Pstate ) -> 
-	case probe_store:get_host_pid( ProbeName ) of
+	case probe_store:get_probe_pid( ProbeName ) of
 		{ok, _Pid} ->
 			{ error, probe_already_added };
 		_ ->
@@ -69,23 +63,19 @@ get_status( Pid ) ->
 run( Pid ) when is_pid( Pid ) ->
 	gen_server:call( Pid, run );
 
-run( Host ) ->
-	case probe_store:get_host_pid( Host ) of
+run( ProbeName ) ->
+	case probe_store:get_probe_pid( ProbeName ) of
 		{ok, Pid} ->
-			run(Pid);
-		_ ->
-			{ error_pid_not_found }
+			run(Pid)
 	end.
 
 sleep( Pid ) when is_pid( Pid ) ->
 	gen_server:call( Pid, sleep );
 
 sleep( ProbeName ) ->
-	case probe_store:get_host_pid( ProbeName ) of
+	case probe_store:get_probe_pid( ProbeName ) of
 		{ok, Pid} ->
-			sleep(Pid);
-		_ ->
-			{ error_pid_not_found }
+			sleep(Pid)
 	end.
 
 set_interval( Pid, NewInterval ) when is_pid( Pid ) ->
@@ -97,7 +87,7 @@ set_interval( Pid, NewInterval ) when is_pid( Pid ) ->
 	gen_server:call( Pid, { set_interval, NewInt } );
 	
 set_interval( ProbeName, NewInterval ) ->
-	{ ok, Pid } = probe_store:get_host_pid( ProbeName ),
+	{ ok, Pid } = probe_store:get_probe_pid( ProbeName ),
 	set_interval( Pid, NewInterval ).
 
 touch( Pid ) ->
@@ -122,13 +112,14 @@ handle_call( testdie, _From, State ) ->
 
 handle_call( get_status , _From,  State ) ->
 		#state{ 
-				host = Host,
+				name = ProbeName,
 				status = Status, 
-				touched = Sent, 
-				felt = Rcvd 
-			} = State,
-		{ok, NewResults } = probe_store:get_results( Host ),
-		{reply, { ok, Status, Sent, Rcvd, NewResults } , State};
+				attempts = Attempts,
+				attrs = _Attrs
+		} = State,
+		{ok, NewResults } = probe_store:get_results( ProbeName ),
+%		{reply, { ok, Status, Sent, Rcvd, NewResults } , State};
+		{reply, { ok, Status, Attempts, Attempts, NewResults } , State};
 
 handle_call( { set_interval, NewInterval }, _From , State ) when NewInterval >= 100 ->
 		Status = State#state.status,
@@ -137,71 +128,49 @@ handle_call( { set_interval, NewInterval }, _From , State ) when NewInterval >= 
 			running ->
 				{ reply, ok, StateStopped } = handle_call( sleep, _From, State ),
 				StateToRun = StateStopped#state{ interval = NewInterval },
-				{reply, ok , StateAfterRun } = 
+				{ reply, ok, StateAfterRun } = 
 					handle_call( run, _From, StateToRun ),
 				StateAfterRun;
 			_ ->
 				State#state{ interval = NewInterval }
 		   end,
-		{reply, ok,  NewState };
+		{ reply, ok, NewState };
 
 handle_call( run, _From,  State ) when State#state.status =:= sleeping ->
 		spawn( ?MODULE, scheduler, [self(),State] ),
-		{reply, ok, State };
+		{ reply, ok, State };
+			
+handle_call( run, _From,  State ) when State#state.status =:= initializing ->
+		spawn( ?MODULE, scheduler, [self(),State] ),
+		{ reply, ok, State };
 			
 handle_call( sleep, _From, State ) when State#state.status =:= running ->
 		Tref = State#state.tref,
 		{ ok, cancel } = timer:cancel( Tref ),
-		{reply, ok,  State#state{ status = sleeping, tref = undefined } };
+		{ reply, ok, State#state{ status = sleeping, tref = undefined } };
 
 handle_call( _, _From, State ) ->
-		{reply, probe_worker_call_here_unknown , State}.
+		{ reply, probe_worker_call_here_unknown , State }.
 
 
 handle_cast( touch , State ) ->
 		
 		#state{ 
-			host = Host, 
-			touched = Echo, 
-			felt = Replies
-						} = State,
+			name = ProbeName,
+			type = Type,
+			attempts = Attempts,
+			attrs = Attrs
+		} = State,
+		NewAttempts = Attempts + 1,
+		ModuleToCalltxt = "probe_type_" ++ atom_to_list(Type),
+		ModuleToCall = list_to_atom(ModuleToCalltxt),
+		{ ok, NewAttrs, Result } = ModuleToCall:specific_touch( Attrs ),
 
-		NewEcho = Echo + 1,
-		Seq = NewEcho rem 65536,
-		UTCNow = os:timestamp(),
-		PingRes = 
-  		  try gen_icmp:ping([Host], [{ timeout, ?DEF_TIMEOUT},{ sequence, Seq } ]) of
-		    [PingOut] -> PingOut 
-		  catch
-			Exception:Reason -> 
-				{ error, exception, {Exception, Reason} }
-
-		  end,
-
-	  	NewReplies =
-		  case PingRes of
-			{ ok, _, _,  _, {_, _, _, Delay}, _} ->
-				Reply = { ok, { { sequence , Seq }, {delay, Delay} } },
-				Replies + 1;
-			{ error, timeout, _,  _ }  ->
-				Reply = { error, timeout },
-				Replies;
-			{ error, unreach_net, _,  _, _, _, _} ->
-				Reply = { error, unreach_net },
-				Replies;
-			{ error, exception, Exc } ->
-				Reply = { error, exception, Exc },
-				Replies;
-			Other ->
-				Reply = { error, unknown, Other },
-				Replies
-		  end,
-		Result = #result{ timestamp = UTCNow, got = Reply },
-		NewState = State#state{ 
-					touched = NewEcho, 
-					felt = NewReplies 
-					},
-		probe_store:add_result( Host, Result ),
+		NewState = State#state{
+					attempts = NewAttempts,
+					attrs = NewAttrs
+		},
+		probe_store:add_result( ProbeName, Result ),
 		{noreply, NewState};
 
 handle_cast( { set_running, Tref } , State ) ->
@@ -223,25 +192,25 @@ start_link( Params ) ->
 	gen_server:start_link(?MODULE, [ Params ], []).
 
 terminate(_Reason, _State ) ->
-			ok.
+	ok.
 
 init( [ {ProbeName, Pstate} ] ) -> 
         #pstate{
-                                                status = _Initial,
-                                                type = Type,
-                                                interval = Interval,
-                                                attrs = Attrs
-                                           } = Pstate,
-        { fqdn_ip, Host } = lists:keyfind( fqdn_ip, 1, Attrs ),
+                  status = _Initial,
+                  type = Type,
+                  interval = Interval,
+                  attrs = Attrs
+               }   = Pstate,
 
-			StartState = #state{ 
-						host = Host, 
-						type = Type,
-						interval = Interval, 
-						status = sleeping
-						},
-			probe_mgr:register_host_pid( ProbeName, self() ),
-			{ ok, StartState }.  
+	StartState = #state{ 
+				name = ProbeName,
+				type = Type,
+				interval = Interval, 
+				status = initializing,
+				attrs = Attrs
+	},
+	probe_mgr:register_probe_pid( ProbeName, self() ),
+	{ ok, StartState }.  
 
 code_change(_OldVsn, State, _Extra) ->
 				io:format("Got code change! ping_worker ~p~n",[self()]),

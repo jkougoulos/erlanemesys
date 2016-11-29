@@ -1,8 +1,5 @@
 -module(erlanemesys_api).
 
-%-export([start_link/0, stop/0, add/1, add/2, get_active/0, run/1, sleep/1 ]).
-%-export([del/1, register_host_pid/2, set_interval/2]).
-
 %probe_mgr calls
 -export([add/1, del/1, run/1, sleep/1, get_active/0, set_interval/2]).
 
@@ -19,8 +16,7 @@ add( ProbeName ) ->
 					  ]
 				}
 			]  
-			).
-%	probe_mgr:add( Host ).
+	).
 
 del( ProbeName ) ->
 	probe_mgr:del( ProbeName ).

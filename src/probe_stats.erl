@@ -11,8 +11,8 @@ report( Pid ) when is_pid( Pid ) ->
         { ok, StrOut3 } = all_results_to_txt( Results ),
         { ok, StrOut1 ++ StrOut2 ++ StrOut3 } ;
 
-report( Host ) ->
-	GetPid = probe_store:get_host_pid( Host ),
+report( ProbeName ) ->
+	GetPid = probe_store:get_probe_pid( ProbeName ),
 	case GetPid of
 		{ ok, Pid } ->
 			report( Pid );
@@ -23,7 +23,7 @@ all_results_to_txt( [] ) ->
         { ok, [] };
 
 all_results_to_txt( [ Result | Results ] ) ->
-        { _Host, #result{ timestamp = Time, got = Got }} = Result,
+        { _ProbeName, #result{ timestamp = Time, got = Got }} = Result,
         Left = io_lib:format("Time is ",[]),
         Center = get_timestamp_to_txt( Time ),
         Right = io_lib:format(" result is ~p~n", [Got] ),
