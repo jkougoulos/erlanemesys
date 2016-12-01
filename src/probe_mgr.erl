@@ -24,7 +24,7 @@
 
 -define(SERVER, ?MODULE).
 
--define(DEFINTERVAL, 30000 ).
+-define(DEFINTERVAL, 4000 ).
 -define(DEF_STATE_NEWPROBE, running ).
 
 register_probe_pid( ProbeName, Pid ) ->

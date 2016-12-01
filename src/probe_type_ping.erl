@@ -39,7 +39,7 @@ specific_touch( Attrs ) ->
                        Replies
          end,
         Result = #result{ timestamp = UTCNow, got = Reply },
-
+%        timer:sleep(12000),
 	NewAttrs = Attrs,
 	{ ok, NewAttrs, Result }.
 	

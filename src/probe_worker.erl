@@ -3,7 +3,7 @@
 -behavior( gen_server ).
 
 -export([start_link/1, touch/1, touch/2, testdie/1, get_status/1, run/1]).
--export([remove/1, sleep/1, set_interval/2, new/2, scheduler/2 ]).
+-export([remove/1, sleep/1, set_interval/2, new/2, scheduler/2, store_result/2 ]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -13,6 +13,7 @@
 		 type, 
 		 attempts = 0, 
 	 	 tref, 
+		 fun_pid = undef,
 		 status, 
 		 interval,  
 		 attrs
@@ -57,6 +58,9 @@ new( ProbeName, Pstate ) ->
 				[ { ProbeName, Pstate } ] )
 	end.
 
+store_result( Pid, { FromPid, Attrs, Result } ) ->
+	gen_server:call( Pid, { store_result, FromPid, Attrs, Result }, 10000 ).
+
 get_status( Pid ) ->
 	gen_server:call( Pid, get_status, 10000 ).
 
@@ -81,10 +85,19 @@ sleep( ProbeName ) ->
 set_interval( Pid, NewInterval ) when is_pid( Pid ) ->
 	NewInt =
 		case is_list(NewInterval) of
-			true -> list_to_integer( NewInterval);
+			true -> list_to_integer( NewInterval );
 			_ -> NewInterval
 		end,
-	gen_server:call( Pid, { set_interval, NewInt } );
+       { ok, Status, _Attempts, _Attempts, _NewResults } = get_status( Pid ), 
+       case Status of
+               running ->
+                             ok = sleep( Pid ),
+			     gen_server:call( Pid, { set_interval, NewInt } ),
+			     ok = run( Pid ),
+			     ok;
+                     _ ->
+			     gen_server:call( Pid, { set_interval, NewInt } )
+       end;
 	
 set_interval( ProbeName, NewInterval ) ->
 	{ ok, Pid } = probe_store:get_probe_pid( ProbeName ),
@@ -122,18 +135,7 @@ handle_call( get_status , _From,  State ) ->
 		{reply, { ok, Status, Attempts, Attempts, NewResults } , State};
 
 handle_call( { set_interval, NewInterval }, _From , State ) when NewInterval >= 100 ->
-		Status = State#state.status,
-		NewState = 
-		   case Status of
-			running ->
-				{ reply, ok, StateStopped } = handle_call( sleep, _From, State ),
-				StateToRun = StateStopped#state{ interval = NewInterval },
-				{ reply, ok, StateAfterRun } = 
-					handle_call( run, _From, StateToRun ),
-				StateAfterRun;
-			_ ->
-				State#state{ interval = NewInterval }
-		   end,
+		NewState = State#state{ interval = NewInterval },
 		{ reply, ok, NewState };
 
 handle_call( run, _From,  State ) when State#state.status =:= sleeping ->
@@ -149,11 +151,19 @@ handle_call( sleep, _From, State ) when State#state.status =:= running ->
 		{ ok, cancel } = timer:cancel( Tref ),
 		{ reply, ok, State#state{ status = sleeping, tref = undefined } };
 
+handle_call( { store_result, FromPid, NewAttrs, Result }, From, State ) ->
+		ProbeName = State#state.name,
+		FunPid = State#state.fun_pid,
+		FunPid = FromPid,
+		probe_store:add_result( ProbeName, Result ),
+		NewState = State#state{ fun_pid = undef, attrs = NewAttrs },
+		{reply, ok, NewState};
+
 handle_call( _, _From, State ) ->
 		{ reply, probe_worker_call_here_unknown , State }.
 
 
-handle_cast( touch , State ) ->
+handle_cast( touch , State ) when State#state.fun_pid =:= undef ->
 		
 		#state{ 
 			name = ProbeName,
@@ -164,14 +174,23 @@ handle_cast( touch , State ) ->
 		NewAttempts = Attempts + 1,
 		ModuleToCalltxt = "probe_type_" ++ atom_to_list(Type),
 		ModuleToCall = list_to_atom(ModuleToCalltxt),
-		{ ok, NewAttrs, Result } = ModuleToCall:specific_touch( Attrs ),
+		Self = self(),
+		FunPid = spawn_link( fun() ->
+					{ ok, NewAttrs, Result } = apply( ModuleToCall, specific_touch,  [Attrs] ),
+					ok = probe_worker:store_result( Self, { self(), NewAttrs, Result } )
+				end
+		),
 
 		NewState = State#state{
 					attempts = NewAttempts,
-					attrs = NewAttrs
+					fun_pid = FunPid
+%					attrs = NewAttrs
 		},
-		probe_store:add_result( ProbeName, Result ),
 		{noreply, NewState};
+
+handle_cast( touch , State )  ->
+		io:format( "touch while another type specific probe ~p is running ~p~n", [State#state.fun_pid, State#state.name ] ),
+		{noreply, State};
 
 handle_cast( { set_running, Tref } , State ) ->
 		NewState = State#state{ status = running, tref = Tref },
