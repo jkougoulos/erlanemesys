@@ -189,7 +189,7 @@ handle_cast( touch , State ) when State#state.fun_pid =:= undef ->
 		{noreply, NewState};
 
 handle_cast( touch , State )  ->
-		io:format( "touch while another type specific probe ~p is running ~p~n", [State#state.fun_pid, State#state.name ] ),
+%		io:format( "touch while another type specific probe ~p is running ~p~n", [State#state.fun_pid, State#state.name ] ),
 		{noreply, State};
 
 handle_cast( { set_running, Tref } , State ) ->

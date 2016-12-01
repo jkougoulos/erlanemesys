@@ -1,16 +1,28 @@
 -module(erlanemesys_api).
 
 %probe_mgr calls
--export([add/1, del/1, run/1, sleep/1, get_active/0, set_interval/2]).
+-export([addping/1, addhttp/1, del/1, run/1, sleep/1, get_active/0, set_interval/2]).
 
 %probe_stats calls
 -export([report/1]).
 
-add( ProbeName ) ->
+addping( ProbeName ) ->
 	Host = ProbeName,
 	probe_mgr:add( [ 
-				{ name, ProbeName }, 
+				{ name, ProbeName ++ "-ping" }, 
 				{ type, ping }, 
+				{ attrs , [ 
+						{ fqdn_ip, Host }
+					  ]
+				}
+			]  
+	).
+
+addhttp( ProbeName ) ->
+	Host = ProbeName,
+	probe_mgr:add( [ 
+				{ name, ProbeName ++ "-http" }, 
+				{ type, http }, 
 				{ attrs , [ 
 						{ fqdn_ip, Host }
 					  ]

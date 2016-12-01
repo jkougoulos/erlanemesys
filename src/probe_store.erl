@@ -56,15 +56,15 @@ get_probe_pid( ProbeName ) ->
 	end. 
 
 handle_call( { add_result, { ProbeName, Result } }, _From, Tid ) ->
-	{ Ms, S, Us }  = os:timestamp(),
-	ResultsTTL = { Ms, S - ?KEEP_RESULTS_SECS, Us },
-	ToBDeleted = ets:select( probe_store_results, 
-					[
-					   {{'$1',{result,'$2','$3'}},  
-					       [{'=:=','$1',ProbeName},
-					       {'<','$2',{const,ResultsTTL}}],
-					   [{{'$1',{{result,'$2','$3'}}}}]}]),
-	[ ets:delete_object( probe_store_results, Obj ) || Obj <- ToBDeleted ],
+%	{ Ms, S, Us }  = os:timestamp(),
+%	ResultsTTL = { Ms, S - ?KEEP_RESULTS_SECS, Us },
+%	ToBDeleted = ets:select( probe_store_results, 
+%					[
+%					   {{'$1',{result,'$2','$3'}},  
+%					       [{'=:=','$1',ProbeName},
+%					       {'<','$2',{const,ResultsTTL}}],
+%					   [{{'$1',{{result,'$2','$3'}}}}]}]),
+%	[ ets:delete_object( probe_store_results, Obj ) || Obj <- ToBDeleted ],
 	true = ets:insert( probe_store_results, { ProbeName, Result } ),
 	{ reply,  ok, Tid };
 
