@@ -54,8 +54,7 @@ new( ProbeName, Pstate ) ->
 		{ok, _Pid} ->
 			{ error, probe_already_added };
 		_ ->
-			supervisor:start_child( probe_sup, 
-				[ { ProbeName, Pstate } ] )
+			supervisor:start_child( probe_sup, [ { ProbeName, Pstate } ] )
 	end.
 
 store_result( Pid, { FromPid, Attrs, Result } ) ->
@@ -151,7 +150,7 @@ handle_call( sleep, _From, State ) when State#state.status =:= running ->
 		{ ok, cancel } = timer:cancel( Tref ),
 		{ reply, ok, State#state{ status = sleeping, tref = undefined } };
 
-handle_call( { store_result, FromPid, NewAttrs, Result }, From, State ) ->
+handle_call( { store_result, FromPid, NewAttrs, Result }, _From, State ) ->
 		ProbeName = State#state.name,
 		FunPid = State#state.fun_pid,
 		FunPid = FromPid,
@@ -184,7 +183,6 @@ handle_cast( touch , State ) when State#state.fun_pid =:= undef ->
 		NewState = State#state{
 					attempts = NewAttempts,
 					fun_pid = FunPid
-%					attrs = NewAttrs
 		},
 		{noreply, NewState};
 
@@ -221,12 +219,16 @@ init( [ {ProbeName, Pstate} ] ) ->
                   attrs = Attrs
                }   = Pstate,
 
+        ModuleToCalltxt = "probe_type_" ++ atom_to_list(Type),
+        ModuleToCall = list_to_atom(ModuleToCalltxt),
+        { ok, NewAttrs } = ModuleToCall:normalize_state_attrs( Attrs ),
+
 	StartState = #state{ 
 				name = ProbeName,
 				type = Type,
 				interval = Interval, 
 				status = initializing,
-				attrs = Attrs
+				attrs = NewAttrs
 	},
 	probe_mgr:register_probe_pid( ProbeName, self() ),
 	{ ok, StartState }.  

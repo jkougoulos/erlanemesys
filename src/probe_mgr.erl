@@ -24,7 +24,7 @@
 
 -define(SERVER, ?MODULE).
 
--define(DEFINTERVAL, 4000 ).
+-define(DEFINTERVAL, 30000 ).
 -define(DEF_STATE_NEWPROBE, running ).
 
 register_probe_pid( ProbeName, Pid ) ->
@@ -61,14 +61,22 @@ handle_call( { add , { Params, Initial } } , _From, State ) ->
 	{ name, ProbeName } = lists:keyfind( name, 1, Params ),
 	{ type, ProbeType } = lists:keyfind( type, 1, Params ),
 	{ attrs, Attrs } = lists:keyfind( attrs, 1, Params ),
+	case lists:keyfind( interval, 1, Params ) of
+			{ interval, Interval } -> 
+				ok;
+			false ->
+				Interval = ?DEFINTERVAL
+	end,
+	ModuleToCalltxt = "probe_type_" ++ atom_to_list(ProbeType),
+        ModuleToCall = list_to_atom(ModuleToCalltxt),
+	{ ok, NewAttrs } = ModuleToCall:normalize_pstate_attrs( Attrs ),
 	case probe_store:get_pstate( ProbeName ) of 
 		[] ->
-			Interval = ?DEFINTERVAL,
 			NewPstate = #pstate{ 
 						status = Initial, 
 						type = ProbeType, 
 					 	interval = Interval, 
-						attrs = Attrs 
+						attrs = NewAttrs 
 					   },
 			ok = probe_store:set_pstate( ProbeName, NewPstate ),
 			Result = probe_worker:new( ProbeName, NewPstate );
